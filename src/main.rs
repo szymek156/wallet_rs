@@ -1,3 +1,9 @@
+mod bip39;
+mod entropy;
+use entropy::BasicEntropy;
+
 fn main() {
-    println!("Hello, world!");
+    let ent = BasicEntropy;
+
+    bip39::generate_mnemonics(15, &ent);
 }
