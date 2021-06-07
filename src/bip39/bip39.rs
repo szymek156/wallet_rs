@@ -19,6 +19,7 @@ use crate::entropy::EntropySource;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 use std::vec::Vec;
 use to_binary::BinaryString;
 
@@ -99,8 +100,10 @@ pub fn generate_mnemonics(
 
     println!("word indices dec: {:?}", word_indices_dec);
 
-    // Convert indices to actuall words
-    let filename = "/home/szym/wallet_rs/src/bip39/english.txt";
+    // Convert indices to actual words
+    let mut filename = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    filename.push("src/bip39/english.txt");
+
     let reader = BufReader::new(File::open(filename).unwrap());
 
     let mut mnemonics = vec![];
@@ -109,11 +112,24 @@ pub fn generate_mnemonics(
     for (index, line) in reader.lines().enumerate() {
         let line = line.unwrap();
         if word_indices_dec.contains(&(index)) {
-            mnemonics.push(line); // TODO: that's incorrect order
+            mnemonics.push((index, line));
         }
     }
 
     println!("Mnemonics {:?}", mnemonics);
+
+    // Iterate over indices, find it in mnemonics, return making them ordered correctly
+    let mnemonics: Vec<String> = word_indices_dec
+        .iter()
+        .map(
+            |idx| match mnemonics.iter().find(|(place, _)| place == idx) {
+                Some((_, word)) => String::from(word), // TODO: this is a copy, is there any way to make a move?
+                None => panic!(format!("Index '{}' does not match any memo", idx)), // TODO: how to return from a function?
+            },
+        )
+        .collect();
+
+    println!("RESULT {:?}", mnemonics);
     Ok(mnemonics)
 
     // TODO: use proper err handling
@@ -177,13 +193,24 @@ mod tests {
 
     #[test]
     fn valid_word_count() {
-        assert_eq!(
-            // Ok([
-            //     "stick", "cluster", "blood", "sad", "onion", "age", "laptop", "grab", "cement",
-            //     "unknown", "yard", "spend"
-            // ]
+        println!("env: {}", env!("CARGO_MANIFEST_DIR"));
 
-            Ok([].to_vec()),
+        assert_eq!(
+            Ok(vec![
+                // TODO: da fuck
+                "stick".to_string(),
+                "cluster".to_string(),
+                "blood".to_string(),
+                "sad".to_string(),
+                "onion".to_string(),
+                "age".to_string(),
+                "laptop".to_string(),
+                "grab".to_string(),
+                "cement".to_string(),
+                "unknown".to_string(),
+                "yard".to_string(),
+                "spend".to_string()
+            ]),
             generate_mnemonics(12, &DummyEntropy {})
         );
     }
