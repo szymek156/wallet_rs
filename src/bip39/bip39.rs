@@ -23,38 +23,21 @@ use std::path::PathBuf;
 use std::vec::Vec;
 use to_binary::BinaryString;
 
-pub fn generate_mnemonics(
-    word_count: usize,
-    ent: &dyn EntropySource,
-) -> Result<Vec<String>, String> {
-    let entropy_len;
-    match word_count {
-        12 | 15 | 18 | 21 | 24 => entropy_len = word_count / 3 * 32,
+fn generate_word_indices(word_count: usize, ent: &dyn EntropySource) -> Result<Vec<usize>, String> {
+    let entropy_len = match word_count {
+        12 | 15 | 18 | 21 | 24 => word_count / 3 * 32,
         _ => return Err(format!("Invalid word_count {}", word_count)),
     };
 
     println!("Entropy len {}", entropy_len);
 
-    let mut out = ent.get_random_bits(entropy_len);
-    println!("Entropy {:?}", out);
+    let entropy = ent.get_random_bits(entropy_len);
+    println!("Entropy {:?}", entropy);
 
-    // let hex_str = format!("{:x}", out);
-    // TODO: what about endianess here?
-    // Sha256::digest(&out);
-    let mut hasher = Sha256::new();
+    let ent_hash_bits = BinaryString::from(Sha256::digest(&entropy).as_slice());
 
-    for el in out.iter() {
-        hasher.update(el.to_be_bytes());
-    }
-
-    let ent_hash = hasher.finalize();
-    println!("hash {:x}", ent_hash);
-
-    let ent_hash = BinaryString::from(ent_hash.as_slice());
-
-    println!("hash bin {}", ent_hash);
     // Change entropy bytes to bin string
-    let mut out = BinaryString::from(out);
+    let mut entropy_bits = BinaryString::from(entropy);
 
     let check_sum_len = entropy_len / 32;
 
@@ -64,23 +47,23 @@ pub fn generate_mnemonics(
     //  ENT / 32
     // bits of its SHA256 hash. This checksum is appended to the end of the initial entropy.
     // Make it more pythonic, errr rustonic?
-    for (i, el) in ent_hash.0.chars().enumerate() {
+    for (i, el) in ent_hash_bits.0.chars().enumerate() {
         if i == check_sum_len {
             break;
         }
 
-        out.0.push(el);
+        entropy_bits.0.push(el);
     }
 
-    println!("out + cs {}", out.0.len());
+    println!("out + cs {}", entropy_bits.0.len());
 
     // Next, these concatenated bits are split into groups of 11 bits,
     // each encoding a number from 0-2047, serving as an index into a wordlist.
-    println!("Bin string: {}", out);
+    println!("Bin string: {}", entropy_bits);
 
     let mut word_indices = vec![];
     let mut index = String::new();
-    for (i, el) in out.0.chars().enumerate() {
+    for (i, el) in entropy_bits.0.chars().enumerate() {
         if i > 0 && i % 11 == 0 {
             word_indices.push(index);
             index = String::new();
@@ -100,6 +83,15 @@ pub fn generate_mnemonics(
 
     println!("word indices dec: {:?}", word_indices_dec);
 
+    return Ok(word_indices_dec);
+}
+
+pub fn generate_mnemonics(
+    word_count: usize,
+    ent: &dyn EntropySource,
+) -> Result<Vec<String>, String> {
+    let indices = generate_word_indices(word_count, ent)?;
+
     // Convert indices to actual words
     let mut filename = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     filename.push("src/bip39/english.txt");
@@ -111,7 +103,7 @@ pub fn generate_mnemonics(
     // Read the file line by line using the lines() iterator from std::io::BufRead.
     for (index, line) in reader.lines().enumerate() {
         let line = line.unwrap();
-        if word_indices_dec.contains(&(index)) {
+        if indices.contains(&(index)) {
             mnemonics.push((index, line));
         }
     }
@@ -119,7 +111,7 @@ pub fn generate_mnemonics(
     println!("Mnemonics {:?}", mnemonics);
 
     // Iterate over indices, find it in mnemonics, return making them ordered correctly
-    let mnemonics: Vec<String> = word_indices_dec
+    let mnemonics: Vec<String> = indices
         .iter()
         .map(
             |idx| match mnemonics.iter().find(|(place, _)| place == idx) {
