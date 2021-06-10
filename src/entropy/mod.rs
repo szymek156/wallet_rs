@@ -2,6 +2,7 @@
 use rand::prelude::*;
 
 pub trait EntropySource {
+    // TODO docs
     fn get_random_bits(&self, count: usize) -> Vec<u8>;
 }
 
