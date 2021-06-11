@@ -124,41 +124,16 @@ mod tests {
     }
 
     #[derive(Serialize, Deserialize)]
-    struct TestVector {
+    struct TestElement {
         ent: String,
         seed: String,
         mnemonics: String,
         xprv: String,
     }
 
-    #[test]
-    fn fiddling_around() {
-        // SHA256
-        let mut hasher = Sha256::new();
-
-        // https://emn178.github.io/online-tools/sha256.html
-        // 0x11 -> 4a64a107f0cb32536e5bce6c98c393db21cca7f4ea187ba8c4dca8b51d4ea80a
-        // BIG ENDIAN!
-        hasher.update(0x11002233_u32.to_be_bytes());
-        println!("hash {:x}", hasher.finalize());
-
-        // Converting hex strng to array of bytes
-        let decoded = hex::decode("d5a58c5fded9ac099f432a253dbffb68").unwrap();
-
-        let mut hasher = Sha256::new();
-        hasher.update(decoded);
-        println!("hash of string {:x}", hasher.finalize());
-    }
-
-    #[test]
-    fn sha256_calculation_works() {
-        let mut hasher = Sha256::new();
-        hasher.update(DummyEntropy::default().get_random_bits(12));
-
-        assert_eq!(
-            "af6d1c421d3fc9a770c960c6552c22d25d0f6d2300c437a750e9f607f091ff9a",
-            format!("{:x}", hasher.finalize())
-        );
+    #[derive(Serialize, Deserialize)]
+    struct TestVector{
+        elemetnts : Vec<TestElement>
     }
 
     #[test]
