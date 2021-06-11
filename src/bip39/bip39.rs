@@ -101,11 +101,11 @@ mod tests {
 
     use super::*;
 
-    struct DummyEntropy {
-        input: String,
+    struct DummyEntropy<'a> {
+        input: &'a str,
     }
 
-    impl EntropySource for DummyEntropy {
+    impl<'a> EntropySource for DummyEntropy<'a> {
         fn get_random_bits(&self, _count: usize) -> Vec<u8> {
             // let input = "d5a58c5fded9ac099f432a253dbffb68";
             // let input = "00000000000000000000000000000000";
@@ -115,15 +115,15 @@ mod tests {
         }
     }
 
-    impl Default for DummyEntropy {
+    impl<'a> Default for DummyEntropy<'a> {
         fn default() -> Self {
             DummyEntropy {
-                input: "d5a58c5fded9ac099f432a253dbffb68".to_string(),
+                input: &"d5a58c5fded9ac099f432a253dbffb68",
             }
         }
     }
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct TestElement {
         ent: String,
         seed: String,
@@ -131,9 +131,9 @@ mod tests {
         xprv: String,
     }
 
-    #[derive(Serialize, Deserialize)]
-    struct TestVector{
-        elemetnts : Vec<TestElement>
+    #[derive(Serialize, Deserialize, Debug)]
+    struct TestVector {
+        english: Vec<TestElement>,
     }
 
     #[test]
@@ -164,5 +164,28 @@ mod tests {
             ]),
             generate_mnemonics(12, &DummyEntropy::default())
         );
+    }
+
+    #[test]
+    fn test_vector() {
+        let mut filename = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        filename.push("src/bip39/vectors.json");
+        let reader = BufReader::new(File::open(filename).unwrap());
+
+        let test_vector: TestVector = serde_json::from_reader(reader).unwrap();
+
+        for test in test_vector.english.iter() {
+            // TODO: why type needs to be provided?
+            let mnemonics: Vec<String> = test
+                .mnemonics
+                .split_whitespace()
+                .map(|x| String::from(x))
+                .collect();
+
+            let ent = DummyEntropy { input: &test.ent };
+
+            let word_count = mnemonics.len();
+            assert_eq!(Ok(mnemonics), generate_mnemonics(word_count, &ent));
+        }
     }
 }
