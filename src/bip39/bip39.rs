@@ -62,34 +62,52 @@ fn generate_word_indices(word_count: usize, ent: &dyn EntropySource) -> Result<V
     return Ok(word_indices);
 }
 
-pub fn generate_mnemonics(
-    word_count: usize,
-    ent: &dyn EntropySource,
-) -> Result<Vec<String>, String> {
-    let indices = generate_word_indices(word_count, ent)?;
-
+pub fn get_words_from_file(indices: Vec<usize>) -> Result<Vec<String>, String> {
     // Convert indices to actual words
     let mut filename = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     filename.push("src/bip39/english.txt");
 
     let reader = BufReader::new(File::open(filename).unwrap());
 
+    let word_count = indices.len();
+    let mut found_memos = 0;
+
     let mut mnemonics = vec![String::new(); word_count];
     // Read the file line by line using the lines() iterator from std::io::BufRead.
-    for (index, line) in reader.lines().enumerate() {
-        match indices.iter().position(|&i| i == index) {
-            Some(pos) => {
-                let line = line.unwrap();
-                mnemonics[pos] = line;
+    'file_loop: for (index, line) in reader.lines().enumerate() {
+        let line = line.unwrap();
+
+        // Iterate over indices, check if any element matches, if so,
+        // put in mnemonics on 'position'
+        for (position, i) in indices.iter().enumerate() {
+            // TODO: how to get rid off * here?
+            if *i == index {
+                mnemonics[position] = String::from(&line);
+                found_memos += 1;
+
+                // 'sort of' optimization, if all words are found - break
+                if found_memos == word_count {
+                    debug!("Breaking the loop at idx {}", index);
+
+                    break 'file_loop;
+                }
             }
-            None => (),
-        };
+        }
     }
 
     debug!("Mnemonics {:?}", mnemonics);
 
     // TODO: mnemonics is of type Vec<String> isn't it better to be Vec<&String> ??
     Ok(mnemonics)
+}
+
+pub fn generate_mnemonics(
+    word_count: usize,
+    ent: &dyn EntropySource,
+) -> Result<Vec<String>, String> {
+    let indices = generate_word_indices(word_count, ent)?;
+
+    get_words_from_file(indices)
 }
 
 #[cfg(test)]
@@ -178,7 +196,7 @@ mod tests {
             // TODO: why type needs to be provided?
             let mnemonics: Vec<String> = test
                 .mnemonics
-                .split_whitespace()
+                .split_whitespace() // Returns Vec<&str>...convert to String...
                 .map(|x| String::from(x))
                 .collect();
 
