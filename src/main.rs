@@ -35,6 +35,6 @@ fn main() {
     setup_logger();
 
     let ent = BasicEntropy;
-    let _res = bip39::generate_mnemonics(WordsCount::_12, &ent).unwrap();
-    // generate_mnemonics(15, &ent);
+    let mnemonics = bip39::generate_mnemonics(WordsCount::_12, &ent).unwrap();
+    let _seed = bip39::generate_master_seed(&mnemonics);
 }

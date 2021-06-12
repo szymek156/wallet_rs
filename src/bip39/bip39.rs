@@ -15,9 +15,11 @@
 // https://iancoleman.io/bip39/#english
 
 use crate::entropy::EntropySource;
+use hmac::Hmac;
 use log::debug;
+use pbkdf2::pbkdf2;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -26,6 +28,7 @@ use std::vec::Vec;
 use to_binary::BinaryString;
 
 pub type Mnemonics = Vec<String>;
+pub type Seed = Vec<u8>;
 
 // TODO: any better alternative?
 #[derive(Debug, PartialEq)]
@@ -52,8 +55,22 @@ impl TryFrom<usize> for WordsCount {
     }
 }
 
-pub fn generate_master_seed(mneomonics: &Mnemonics, password: &String) -> Result<Vec<u8>, String> {
-    Err("Not implemented yet".to_string())
+pub fn generate_master_seed(mneomonics: &Mnemonics) -> Result<Seed, String> {
+    generate_master_seed_with_password(mneomonics, "")
+}
+
+pub fn generate_master_seed_with_password(
+    mneomonics: &Mnemonics,
+    user_password: &str,
+) -> Result<Seed, String> {
+    let salt = "mnemonic".to_string() + user_password;
+    let iterations = 2048;
+    let password = mneomonics.join(" ");
+
+    let mut seed: Seed = vec![0; 64];
+    pbkdf2::<Hmac<Sha512>>(password.as_bytes(), salt.as_bytes(), iterations, &mut seed);
+
+    Ok(seed)
 }
 
 fn generate_word_indices(
@@ -150,7 +167,7 @@ fn get_words_from_file(indices: &Vec<usize>) -> Result<Mnemonics, String> {
 pub fn generate_mnemonics(
     word_count: WordsCount,
     ent: &dyn EntropySource,
-) -> Result<Vec<String>, String> {
+) -> Result<Mnemonics, String> {
     let indices = generate_word_indices(word_count, ent)?;
 
     get_words_from_file(&indices)
@@ -201,32 +218,39 @@ mod tests {
     }
 
     #[test]
-    fn valid_word_count() {
+    fn simple_test() {
+        let mnemonics = vec![
+            // TODO: da fuck
+            "stick".to_string(),
+            "cluster".to_string(),
+            "blood".to_string(),
+            "sad".to_string(),
+            "onion".to_string(),
+            "age".to_string(),
+            "laptop".to_string(),
+            "grab".to_string(),
+            "cement".to_string(),
+            "unknown".to_string(),
+            "yard".to_string(),
+            "spend".to_string(),
+        ];
         assert_eq!(
-            Ok(vec![
-                // TODO: da fuck
-                "stick".to_string(),
-                "cluster".to_string(),
-                "blood".to_string(),
-                "sad".to_string(),
-                "onion".to_string(),
-                "age".to_string(),
-                "laptop".to_string(),
-                "grab".to_string(),
-                "cement".to_string(),
-                "unknown".to_string(),
-                "yard".to_string(),
-                "spend".to_string()
-            ]),
+            Ok(mnemonics.clone()),
             generate_mnemonics(WordsCount::_12, &DummyEntropy::default())
         );
+
+        let seed = "f3990aab57ffcba134df93414ce4246091a68598c6e06142dd3e625990542bcc51f356971e33c98e597dc76590e1fa8b3a2e5e3195b641d0ad34ddd5441dd0ec";
+        assert_eq!(Ok(hex::decode(seed).unwrap()), generate_master_seed(&mnemonics));
     }
 
     #[test]
     fn cannot_convert_invalid_integer_to_words_count() {
         let invalid = 69;
         assert_eq!(
-            Err(format!("Invalid argument to convert WordsCount {}", invalid)),
+            Err(format!(
+                "Invalid argument to convert WordsCount {}",
+                invalid
+            )),
             WordsCount::try_from(invalid)
         );
     }
@@ -250,7 +274,8 @@ mod tests {
             let ent = DummyEntropy { input: &test.ent };
 
             let word_count: WordsCount = WordsCount::try_from(mnemonics.len()).unwrap();
-            assert_eq!(Ok(mnemonics), generate_mnemonics(word_count, &ent));
+            assert_eq!(Ok(mnemonics.clone()), generate_mnemonics(word_count, &ent));
+            assert_eq!(Ok(hex::decode(&test.seed).unwrap()), generate_master_seed_with_password(&mnemonics, "TREZOR"));
         }
     }
 }
