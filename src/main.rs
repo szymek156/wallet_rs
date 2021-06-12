@@ -5,6 +5,7 @@ use log::{debug, error, info, trace, warn};
 use std::io::Write;
 use std::process;
 use std::thread;
+use bip39::WordsCount;
 
 fn setup_logger() {
     env_logger::builder()
@@ -34,6 +35,6 @@ fn main() {
     setup_logger();
 
     let ent = BasicEntropy;
-    let _res = bip39::generate_mnemonics(12, &ent).unwrap();
+    let _res = bip39::generate_mnemonics(WordsCount::_12, &ent).unwrap();
     // generate_mnemonics(15, &ent);
 }

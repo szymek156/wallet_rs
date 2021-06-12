@@ -18,18 +18,49 @@ use crate::entropy::EntropySource;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::vec::Vec;
 use to_binary::BinaryString;
 
-// TODO: docs
-fn generate_word_indices(word_count: usize, ent: &dyn EntropySource) -> Result<Vec<usize>, String> {
-    let entropy_len = match word_count {
-        12 | 15 | 18 | 21 | 24 => word_count / 3 * 32,
-        _ => return Err(format!("Invalid word_count {}", word_count)),
-    };
+pub type Mnemonics = Vec<String>;
+
+// TODO: any better alternative?
+#[derive(Debug, PartialEq)]
+pub enum WordsCount {
+    _12 = 12,
+    _15 = 15,
+    _18 = 18,
+    _21 = 21,
+    _24 = 24,
+}
+
+impl TryFrom<usize> for WordsCount {
+    type Error = String;
+
+    fn try_from(from: usize) -> Result<Self, Self::Error> {
+        match from {
+            12 => Ok(WordsCount::_12),
+            15 => Ok(WordsCount::_15),
+            18 => Ok(WordsCount::_18),
+            21 => Ok(WordsCount::_21),
+            24 => Ok(WordsCount::_24),
+            _ => Err(format!("Invalid argument to convert WordsCount {}", from)),
+        }
+    }
+}
+
+pub fn generate_master_seed(mneomonics: &Mnemonics, password: &String) -> Result<Vec<u8>, String> {
+    Err("Not implemented yet".to_string())
+}
+
+fn generate_word_indices(
+    word_count: WordsCount,
+    ent: &dyn EntropySource,
+) -> Result<Vec<usize>, String> {
+    let entropy_len = word_count as usize / 3 * 32;
 
     debug!("Total bits {}", entropy_len);
 
@@ -54,6 +85,7 @@ fn generate_word_indices(word_count: usize, ent: &dyn EntropySource) -> Result<V
     let mut word_indices = vec![];
 
     for start in (0..entropy_bits.len()).step_by(11) {
+        // Get 11 bits and convert to decimal
         let bits = &entropy_bits[start..start + 11];
         word_indices.push(usize::from_str_radix(&bits, 2).unwrap());
     }
@@ -62,7 +94,7 @@ fn generate_word_indices(word_count: usize, ent: &dyn EntropySource) -> Result<V
     return Ok(word_indices);
 }
 
-pub fn get_words_from_file(indices: Vec<usize>) -> Result<Vec<String>, String> {
+fn get_words_from_file(indices: &Vec<usize>) -> Result<Mnemonics, String> {
     // Convert indices to actual words
     let mut filename = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     filename.push("src/bip39/english.txt");
@@ -101,13 +133,27 @@ pub fn get_words_from_file(indices: Vec<usize>) -> Result<Vec<String>, String> {
     Ok(mnemonics)
 }
 
+/// Generates mnemonics as defined in BIP39
+///
+/// Function gets specific amount of bits from entropy source, calculates checksum,
+/// and uses both to select given amount of words from english dictionary.
+///
+/// Mnemonics can be later used to generate a seed for deterministic wallets
+/// Or to recover one on a new device.
+///
+/// # Example
+/// ```
+/// let ent = BasicEntropy;
+/// let mnemonics = bip39::generate_mnemonics(WordsCount::_12, &ent).unwrap();
+/// ```
+///
 pub fn generate_mnemonics(
-    word_count: usize,
+    word_count: WordsCount,
     ent: &dyn EntropySource,
 ) -> Result<Vec<String>, String> {
     let indices = generate_word_indices(word_count, ent)?;
 
-    get_words_from_file(indices)
+    get_words_from_file(&indices)
 }
 
 #[cfg(test)]
@@ -155,14 +201,6 @@ mod tests {
     }
 
     #[test]
-    fn invalid_word_count() {
-        assert_eq!(
-            Err("Invalid word_count 69".to_string()),
-            generate_mnemonics(69, &DummyEntropy::default())
-        );
-    }
-
-    #[test]
     fn valid_word_count() {
         assert_eq!(
             Ok(vec![
@@ -180,7 +218,16 @@ mod tests {
                 "yard".to_string(),
                 "spend".to_string()
             ]),
-            generate_mnemonics(12, &DummyEntropy::default())
+            generate_mnemonics(WordsCount::_12, &DummyEntropy::default())
+        );
+    }
+
+    #[test]
+    fn cannot_convert_invalid_integer_to_words_count() {
+        let invalid = 69;
+        assert_eq!(
+            Err(format!("Invalid argument to convert WordsCount {}", invalid)),
+            WordsCount::try_from(invalid)
         );
     }
 
@@ -202,7 +249,7 @@ mod tests {
 
             let ent = DummyEntropy { input: &test.ent };
 
-            let word_count = mnemonics.len();
+            let word_count: WordsCount = WordsCount::try_from(mnemonics.len()).unwrap();
             assert_eq!(Ok(mnemonics), generate_mnemonics(word_count, &ent));
         }
     }
