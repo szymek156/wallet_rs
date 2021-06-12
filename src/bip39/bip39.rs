@@ -55,6 +55,10 @@ impl TryFrom<usize> for WordsCount {
     }
 }
 
+pub fn is_checksum_valid(mnemonics: &Mnemonics) -> Result<bool, String> {
+    Ok(false)
+}
+
 pub fn generate_master_seed(mneomonics: &Mnemonics) -> Result<Seed, String> {
     generate_master_seed_with_password(mneomonics, "")
 }
@@ -68,6 +72,7 @@ pub fn generate_master_seed_with_password(
     let password = mneomonics.join(" ");
 
     let mut seed: Seed = vec![0; 64];
+    // Use low level api - can be used in [nostd] enviroment.
     pbkdf2::<Hmac<Sha512>>(password.as_bytes(), salt.as_bytes(), iterations, &mut seed);
 
     Ok(seed)
@@ -175,9 +180,9 @@ pub fn generate_mnemonics(
 
 #[cfg(test)]
 mod tests {
-    #[test]
+    // TODO: no setup/teardown, what a crap :(
     fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
+        let _ = env_logger::builder().is_test(true).try_init().unwrap();
     }
 
     use super::*;
@@ -218,9 +223,9 @@ mod tests {
     }
 
     #[test]
-    fn simple_test() {
+    fn generate_mnemonics_works() {
         let mnemonics = vec![
-            // TODO: da fuck
+            // TODO: how to avoid that .to_string() crap?
             "stick".to_string(),
             "cluster".to_string(),
             "blood".to_string(),
@@ -235,12 +240,35 @@ mod tests {
             "spend".to_string(),
         ];
         assert_eq!(
-            Ok(mnemonics.clone()),
+            Ok(mnemonics),
             generate_mnemonics(WordsCount::_12, &DummyEntropy::default())
         );
+    }
 
-        let seed = "f3990aab57ffcba134df93414ce4246091a68598c6e06142dd3e625990542bcc51f356971e33c98e597dc76590e1fa8b3a2e5e3195b641d0ad34ddd5441dd0ec";
-        assert_eq!(Ok(hex::decode(seed).unwrap()), generate_master_seed(&mnemonics));
+    #[test]
+    fn generate_master_seed_works() {
+        let mnemonics = vec![
+            // TODO: how to avoid that .to_string() crap?
+            "stick".to_string(),
+            "cluster".to_string(),
+            "blood".to_string(),
+            "sad".to_string(),
+            "onion".to_string(),
+            "age".to_string(),
+            "laptop".to_string(),
+            "grab".to_string(),
+            "cement".to_string(),
+            "unknown".to_string(),
+            "yard".to_string(),
+            "spend".to_string(),
+        ];
+        let seed = "f3990aab57ffcba134df93414ce4246091a68598c6e06142dd3e62\
+                    5990542bcc51f356971e33c98e597dc76590e1fa8b3a2e5e3195b6\
+                    41d0ad34ddd5441dd0ec";
+        assert_eq!(
+            Ok(hex::decode(seed).unwrap()),
+            generate_master_seed(&mnemonics)
+        );
     }
 
     #[test]
@@ -257,6 +285,7 @@ mod tests {
 
     #[test]
     fn test_vector() {
+        // https://github.com/trezor/python-mnemonic/blob/master/vectors.json
         let mut filename = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         filename.push("src/bip39/vectors.json");
         let reader = BufReader::new(File::open(filename).unwrap());
@@ -275,7 +304,10 @@ mod tests {
 
             let word_count: WordsCount = WordsCount::try_from(mnemonics.len()).unwrap();
             assert_eq!(Ok(mnemonics.clone()), generate_mnemonics(word_count, &ent));
-            assert_eq!(Ok(hex::decode(&test.seed).unwrap()), generate_master_seed_with_password(&mnemonics, "TREZOR"));
+            assert_eq!(
+                Ok(hex::decode(&test.seed).unwrap()),
+                generate_master_seed_with_password(&mnemonics, "TREZOR")
+            );
         }
     }
 }
