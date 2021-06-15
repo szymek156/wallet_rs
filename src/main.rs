@@ -37,4 +37,5 @@ fn main() {
     let ent = BasicEntropy;
     let mnemonics = bip39::generate_mnemonics(WordsCount::_12, &ent).unwrap();
     let _seed = bip39::generate_master_seed(&mnemonics);
+    let _valid = bip39::is_checksum_valid(&mnemonics);
 }
