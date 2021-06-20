@@ -1,7 +1,7 @@
-/// Implementation of BIP39 - generation of mnemonics from entropy
-/// # Resources
-/// https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
-/// https://iancoleman.io/bip39/#english
+//! Implementation of BIP39 - generation of mnemonics from entropy
+//! # Resources
+//! https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
+//! https://iancoleman.io/bip39/#english
 use crate::entropy::EntropySource;
 use hmac::Hmac;
 use log::{debug, error, info};
@@ -15,10 +15,20 @@ use std::path::PathBuf;
 use std::vec::Vec;
 // TODO: no setup/teardown for tests, shame!
 use test_env_log::test;
+use thiserror::Error;
 use to_binary::BinaryString;
-
 pub type Mnemonics = Vec<String>;
 pub type Seed = Vec<u8>;
+use std::fmt::Write;
+
+#[derive(Error, Debug, PartialEq)]
+pub enum Bip39Error {
+    #[error("Invalid argument to convert WordsCount {}", .0)]
+    InvalidWordsCount(usize),
+
+    #[error("Index for word {} not found!", .0)]
+    InvalidWord(String),
+}
 
 // TODO: any better alternative for narrowing type to have only a subset of valid integer values?
 #[derive(Debug, PartialEq)]
@@ -32,7 +42,7 @@ pub enum WordsCount {
 
 /// Converting usize to WordsCount
 impl TryFrom<usize> for WordsCount {
-    type Error = String;
+    type Error = Bip39Error;
 
     fn try_from(from: usize) -> Result<Self, Self::Error> {
         match from {
@@ -41,7 +51,7 @@ impl TryFrom<usize> for WordsCount {
             18 => Ok(WordsCount::_18),
             21 => Ok(WordsCount::_21),
             24 => Ok(WordsCount::_24),
-            _ => Err(format!("Invalid argument to convert WordsCount {}", from)),
+            _ => Err(Bip39Error::InvalidWordsCount(from)),
         }
     }
 }
@@ -60,7 +70,8 @@ fn bitstring_to_hex(bitstring: &str) -> String {
         let end = start + 32;
 
         let n: u32 = u32::from_str_radix(&bitstring[start..end], 2).unwrap();
-        hex += &format!("{:08x}", n);
+        // hex += &format!("{:08x}", n); this makes temporary allocation
+        write!(hex, "{:08x}", n).unwrap();
     }
 
     //TODO: add tests
@@ -68,7 +79,7 @@ fn bitstring_to_hex(bitstring: &str) -> String {
     if remainder > 0 {
         let start = bitstring.len() - remainder;
         let n = u32::from_str_radix(&bitstring[start..], 2).unwrap();
-        hex += &format!("{:x}", n);
+        write!(hex, "{:x}", n).unwrap();
     }
 
     hex
@@ -85,7 +96,7 @@ fn get_dictionary() -> Vec<String> {
 }
 
 /// Gets mnemonics collection, calculates their checksum and returns bool indicating if it is correct.
-pub fn is_checksum_valid(mnemonics: &Mnemonics) -> Result<bool, String> {
+pub fn is_checksum_valid(mnemonics: &[String]) -> Result<bool, Bip39Error> {
     let words = get_dictionary();
 
     let word_count = mnemonics.len();
@@ -97,13 +108,13 @@ pub fn is_checksum_valid(mnemonics: &Mnemonics) -> Result<bool, String> {
     let mut bitstring = String::default();
 
     for memo in mnemonics {
-        let position = match words.iter().position(|el| memo == el) {
-            Some(p) => p as u32,
-            None => return Err(format!("Index for word {} not found!", memo)),
-        };
+        let position = words
+            .iter()
+            .position(|el| memo == el)
+            .ok_or_else(|| Bip39Error::InvalidWord(memo.clone()))? as u32;
 
         // Convert to bit, 11 bits wide, leading zeros
-        bitstring += &format!("{:011b}", position);
+        write!(bitstring, "{:011b}", position).unwrap();
     }
 
     debug!("Bitstring is {}", bitstring);
@@ -131,16 +142,16 @@ pub fn is_checksum_valid(mnemonics: &Mnemonics) -> Result<bool, String> {
 }
 
 /// Generates seed from given mnemonics, can be used later in HD wallets
-pub fn generate_master_seed(mnemonics: &Mnemonics) -> Result<Seed, String> {
+pub fn generate_master_seed(mnemonics: &[String]) -> Result<Seed, String> {
     generate_master_seed_with_password(mnemonics, "")
 }
 
 /// Generates seed from given mnemonics, and password. Can be used later in HD wallets
 pub fn generate_master_seed_with_password(
-    mnemonics: &Mnemonics,
+    mnemonics: &[String],
     user_password: &str,
 ) -> Result<Seed, String> {
-    let salt = "mnemonic".to_string() + user_password;
+    let salt = format!("mnemonic{}", user_password);
     let iterations = 2048;
     let password = mnemonics.join(" ");
 
@@ -183,11 +194,11 @@ fn generate_word_indices(word_count: WordsCount, ent: &dyn EntropySource) -> Vec
     }
     debug!("Word indexes: {:?}", word_indices);
 
-    return word_indices;
+    word_indices
 }
 
 /// Converts indices to actual mnemonics collection
-fn get_words_from_file(indices: &Vec<usize>) -> Mnemonics {
+fn get_words_from_file(indices: &[usize]) -> Mnemonics {
     // Convert indices to actual words
     let words = get_dictionary();
 
@@ -252,8 +263,7 @@ mod tests {
 
     impl<'a> EntropySource for DummyEntropy<'a> {
         fn get_random_bits(&self, _count: usize) -> Vec<u8> {
-            let decoded = hex::decode(&self.input).expect("Decoding failed");
-            decoded
+            hex::decode(&self.input).expect("Decoding failed")
         }
     }
 
@@ -261,7 +271,7 @@ mod tests {
         fn default() -> Self {
             DummyEntropy {
                 // Use site from the top of this file to get other values, and compare
-                input: &"d5a58c5fded9ac099f432a253dbffb68",
+                input: "d5a58c5fded9ac099f432a253dbffb68",
             }
         }
     }
@@ -318,7 +328,7 @@ mod tests {
         mnemonics[0] = "slick".to_string();
         assert_eq!(
             is_checksum_valid(&mnemonics),
-            Err(String::from("Index for word slick not found!"))
+            Err(Bip39Error::InvalidWord("slick".to_string()))
         );
     }
 
@@ -352,10 +362,7 @@ mod tests {
     fn cannot_convert_invalid_integer_to_words_count() {
         let invalid = 69;
         assert_eq!(
-            Err(format!(
-                "Invalid argument to convert WordsCount {}",
-                invalid
-            )),
+            Err(Bip39Error::InvalidWordsCount(invalid)),
             WordsCount::try_from(invalid)
         );
     }
